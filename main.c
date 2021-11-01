@@ -38,6 +38,14 @@ static int parseCommands(const int argc, char *const argv[]){
 				return -1;
 		}
 	}
+
+	stdout = freopen(logFile, "w,", stdout);
+	if(stdout == NULL){
+		perror("freopen");
+		return -1;
+	}
+
+	return 0;
 }
 
 int main(const int argc, char *const argv[]){
