@@ -1,7 +1,17 @@
-#include <stdio.h>
 #include <unistd.h>
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
+#include <time.h>
+#include <sys/ipc.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/msg.h>
+#include <sys/shm.h>
+#include <errno.h>
+
+#include "oss.h"
+
 
 #define MAX_REAL_SECONDS 3
 #define MAX_USERS 50
@@ -47,6 +57,8 @@ static int parseCommands(const int argc, char *const argv[]){
 
 	return 0;
 }
+
+
 
 int main(const int argc, char *const argv[]){
   if ((parseCommands(argc, argv) < 0)){
