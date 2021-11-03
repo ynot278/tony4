@@ -11,7 +11,7 @@
 #include "oss.h"
 #include "user.h"
 
-static int sid = -1;
+static int shmid = -1;
 static int qid = -1;
 
 static struct shmem *createSHM(){
@@ -23,13 +23,13 @@ static struct shmem *createSHM(){
 		return NULL;
 	}
 
-	sid = shmget(key, sizeof(struct shmem), 0);
-	if (sid == -1){
+	shmid = shmget(key, sizeof(struct shmem), 0);
+	if (shmid == -1){
 		perror("./user.c error: shmget");
 		return NULL;
 	}
 
-	shm = (struct shmem *)shmat(sid, NULL, 0);
+	shm = (struct shmem *)shmat(shmid, NULL, 0);
 	if (shm == (void *)-1){
 		perror("./user.c error: shmat");
 		return NULL;
@@ -52,7 +52,7 @@ static struct shmem *createSHM(){
 
 int main(const int argc, char *const argv[]){
 	if (argc != 2){
-		perror("user.c error: Args: ./user [IO_BOUND = 0 or 1]\n");
+		perror("user.c error: Args: ./user [IO_Bound = 0 or 1]\n");
 		return EXIT_FAILURE;
 	}
 
