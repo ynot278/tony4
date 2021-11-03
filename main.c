@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
 #include <time.h>
 #include <sys/ipc.h>
 #include <sys/stat.h>
@@ -107,4 +108,7 @@ int main(const int argc, char *const argv[]){
 	if(createSHM() < 0){
 		return EXIT_FAILURE;
 	}
+
+	memset(shm, '\0', sizeof(struct shmem));
+	
 }
