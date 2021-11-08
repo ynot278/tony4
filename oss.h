@@ -1,16 +1,29 @@
 #ifndef OSS_H
 #define OSS_H
 
-enum ftokKeys
-{
-	shmKey = 1000, //Key for the shared memory
-	queueKey		 //key for the shared queue
+#define MAX_PROCESS 18
+
+enum ftokKeys{
+	shmKey = 1000, queueKey		 
 };
 
-//Definition of the shared memory
-struct shmem
-{
-	
+enum queueStatus{
+	queueReady = 0,
+	queueBlock,
+	queueCount
 };
+
+enum processState{
+	NEW = 0,
+	RDY,
+	BLOCK,
+	TERMINATE
+};
+
+struct shmem{
+	struct timespec clock;
+	struct userProcess user[MAX_PROCESS];
+};
+
 
 #endif

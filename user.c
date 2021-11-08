@@ -50,6 +50,19 @@ static struct shmem *createSHM(){
 	return shm;
 }
 
+static int removeSHM(struct shmem *shm){
+	if(shmdt(shm) == -1){
+		perror("./user.c error: shmdt shm");
+		return -1;
+	}
+	return 0;
+}
+
+static int simulation(const int isIO){
+	
+	return 0;
+}
+
 int main(const int argc, char *const argv[]){
 	if (argc != 2){
 		perror("user.c error: Args: ./user [IO_Bound = 0 or 1]\n");
@@ -62,6 +75,13 @@ int main(const int argc, char *const argv[]){
 
 	struct shmem *shm = createSHM();
 	if (shm == NULL){
+		return EXIT_FAILURE;
+	}
+
+	//simulation
+
+	if(shmdt(shm) == -1){
+		perror("./user.c error: shmdt shm");
 		return EXIT_FAILURE;
 	}
 
