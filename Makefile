@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Werror -Wextra -O2 -g
+CFLAGS = 
 
 all: oss user
 

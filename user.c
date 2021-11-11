@@ -1,12 +1,15 @@
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <strings.h>
+#include <string.h>
 #include <time.h>
-#include <sys/shm.h>
-#include <sys/types.h>
 #include <sys/ipc.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/msg.h>
+#include <sys/shm.h>
+#include <errno.h>
 
 #include "oss.h"
 #include "user.h"
@@ -59,7 +62,71 @@ static int removeSHM(struct shmem *shm){
 }
 
 static int simulation(const int isIO){
-	
+
+	int inIO = 1;
+	int blockChance;
+
+	if(isIO){
+		blockChance = 25;
+	} else{
+		blockChance = 5;
+	}
+
+	while(inIO){
+		struct ossMsgger msg;
+
+		msg.pid = getpid();
+		if(msgrcv(qid, (void *)&msg, (sizeof(struct ossMsgger) - sizeof(long)), msg.pid, 0) == -1){
+			perror("./user error: msgrcv failed");
+			break;
+		}
+
+		const int timeslice = msg.timeslice;
+		if(timeslice == 0){
+			break;
+		}
+
+		memset(&msg, '\0', sizeof(struct shmem));
+
+	  int terminate;
+
+	  if ((rand() % 100 + 1) <= 10){
+			terminate = 1;
+		} else{
+			terminate = 0;
+		}
+
+		if(terminate){
+			msg.timeslice = TERMINATE;
+			msg.clock.tv_nsec = rand() % timeslice;
+			inIO = 0;
+		} else{
+			int interrupt;
+			
+			if ((rand() % 100 + 1) < blockChance){
+				interrupt = 1;
+			} else{
+				interrupt = 0;
+			}
+
+			if(interrupt){
+				msg.timeslice = BLOCK;
+				msg.clock.tv_nsec = rand() % timeslice;
+				msg.io.tv_sec = rand() % 5 + 1;
+				msg.io.tv_nsec = rand() % 1000 + 1;
+			} else{
+				msg.timeslice = RDY;
+				msg.clock.tv_nsec = timeslice;
+			}
+		}
+
+		msg.type = getppid();
+		msg.pid = getpid();
+		if(msgsnd(qid, (void *)&msg, (sizeof(struct ossMsgger) - sizeof(long)), 0) == -1){
+			perror("./user error: msgsnd error");
+			break;
+		}
+	}
 	return 0;
 }
 
@@ -78,7 +145,7 @@ int main(const int argc, char *const argv[]){
 		return EXIT_FAILURE;
 	}
 
-	//simulation
+	simulation(isIO);
 
 	if(shmdt(shm) == -1){
 		perror("./user.c error: shmdt shm");

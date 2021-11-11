@@ -14,26 +14,10 @@
 #include "oss.h"
 
 
-#define MAX_REAL_SECONDS 3
-#define MAX_USERS 50
+static unsigned int logLines = 0;
+const char *logFile = "ouput.txt";
 
 static int seconds = MAX_REAL_SECONDS;
-
-const char *logFile = "ouput.txt";
-static unsigned int logLines = 0;
-
-struct userProcess{
-	pid_t pid;
-	unsigned int id;
-	enum processState state;
-
-	struct timespec cpuTime;
-	struct timespec totalTime;
-	struct timespec burstTime;
-	struct timespec blockTime;
-	struct timespec startTime;
-};
-
 static int shmid = -1;
 static int queueID = -1;
 static struct shmem *shm = NULL;
@@ -152,6 +136,16 @@ static int push(const int qid, const int bit){
 	return qid;
 }
 
+static int pop(struct queue *processQueue, const int index){
+	unsigned int i;
+	unsigned int user = processQueue->id[index];
+
+	for(i = index; i < processQueue->length - 1; i++){
+		processQueue->id[i] = processQueue->id[i + 1];
+	}
+	return user;
+}
+
 static int startUserProcess(){
 	char buf[10];
 
@@ -194,7 +188,7 @@ static int startUserProcess(){
 			user->state = RDY;
 			push(queueReady, freeBit);
 			++logLines;
-			printf("OSS: Generating process with PID %u and putting it in queue at time %lu:%lu\n", user->id, shm->clock.tv_sec, shm->clock.tv_nsec);
+			printf("OSS: Generating process with PID %u and putting it in queue 0 at time %lu:%lu\n", user->id, shm->clock.tv_sec, shm->clock.tv_nsec);
 			break;
 	}
 
@@ -229,7 +223,25 @@ static int startTimer(){
 	return 0;
 }
 
+static void unblock(){
+	unsigned int i;
+	for(i = 0; i < processQueue[queueBlock].length; ++i){
+		const int user = processQueue[queueBlock].id[i];
 
+		struct userProcess *users = &shm->user[user];
+
+		if(((users->blockTime.tv_sec < shm->clock.tv_sec)) || ((users->blockTime.tv_sec == shm->clock.tv_sec) && (users->blockTime.tv_nsec <= shm->clock.tv_nsec))){
+			users->state = RDY;
+			users->blockTime.tv_sec = 0;
+			users->blockTime.tv_nsec = 0;
+
+			pop(&processQueue[queueBlock], i);
+			processQueue[queueBlock].length--;
+
+			push(queueReady, user);
+		}
+	}
+}
 
 static int parseCommands(const int argc, char *const argv[]){
 	int opt;
@@ -279,6 +291,7 @@ int main(const int argc, char *const argv[]){
 
 	while(usersDel < MAX_USERS){
 		startTimer();
+		unblock();
 	}
 	
 }
