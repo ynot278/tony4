@@ -10,6 +10,7 @@
 #include <sys/msg.h>
 #include <sys/shm.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "oss.h"
 
@@ -419,8 +420,38 @@ static int parseCommands(const int argc, char *const argv[]){
 	return 0;
 }
 
+static void stopUsers(){
+	struct ossMsgger msg;
+	int i;
+	for(i = 0; i < MAX_PROCESS; i++){
+		if(shm->user[i].pid > 0){
+			msg.timeslice = 0;
+			msg.type = shm->user[i].pid;
+			msg.pid = getpid();
+			if(msgsnd(queueID, (void *)&msg, (sizeof(struct ossMsgger) - sizeof(long)), 0) == -1){
+				break;
+			}
+
+			waitpid(shm->user[i].pid, NULL, 0);
+			shm->user[i].pid = 0;
+		}
+	}
+}
+
+static void catchSignalHandler(int sig)
+{
+	stopUsers();
+  removeSHM();
+}
+
 
 int main(const int argc, char *const argv[]){
+	signal(SIGINT, catchSignalHandler);
+  signal(SIGTERM, catchSignalHandler);
+  signal(SIGALRM, catchSignalHandler);
+  signal(SIGCHLD, SIG_IGN);
+
+
   if(parseCommands(argc, argv) < 0){
 		return EXIT_FAILURE;
 	}
@@ -433,10 +464,16 @@ int main(const int argc, char *const argv[]){
 	memset(bitMap, '\0', sizeof(bitMap));
 	memset(processQueue, '\0', sizeof(struct queue) *queueCount);
 
+	alarm(seconds);
+
 	while(usersDel < MAX_USERS){
 		startTimer();
 		unblock();
 		schedule();
 	}
+
+	stopUsers();
+	removeSHM();
 	
+	return EXIT_SUCCESS;
 }
