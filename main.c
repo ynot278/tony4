@@ -13,11 +13,11 @@
 
 #include "oss.h"
 
+static int seconds = MAX_REAL_SECONDS;
 
 static unsigned int logLines = 0;
 const char *logFile = "ouput.txt";
 
-static int seconds = MAX_REAL_SECONDS;
 static int shmid = -1;
 static int queueID = -1;
 static struct shmem *shm = NULL;

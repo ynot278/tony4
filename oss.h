@@ -47,7 +47,7 @@ struct ossMsgger{
 
 	struct timespec clock;
 	struct timespec io;
-}
+};
 
 
 #endif
