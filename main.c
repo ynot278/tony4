@@ -35,6 +35,10 @@ static unsigned int id = 1;
 
 static struct timespec createNext = {.tv_sec = 0, .tv_nsec = 0};
 
+static struct timespec CPUIdleTime = {.tv_sec = 0, .tv_nsec = 0};
+static struct timespec schedulerTime = {.tv_sec = 0, .tv_nsec = 0};
+static struct timespec schedulerWaitTime = {.tv_sec = 0, .tv_nsec = 0};
+
 static const struct timespec maxTimeBetweenNewProcsSecs = {.tv_sec = 1};
 static const struct timespec maxTimeBetweenNewProcsNS = {.tv_nsec = 1};
 
@@ -130,10 +134,10 @@ static void removeSHM(){
 	}
 }
 
-static int push(const int qid, const int bit){
-	struct queue *q = &processQueue[qid];
+static int push(const int queueID, const int bit){
+	struct queue *q = &processQueue[queueID];
 	q->id[q->length++] = bit;
-	return qid;
+	return queueID;
 }
 
 static int pop(struct queue *processQueue, const int index){
@@ -144,6 +148,157 @@ static int pop(struct queue *processQueue, const int index){
 		processQueue->id[i] = processQueue->id[i + 1];
 	}
 	return user;
+}
+
+static void addTime(struct timespec *timeone, const struct timespec *timetwo){
+	static const unsigned int nsMax = 1000000000;
+
+	timeone->tv_sec += timetwo->tv_sec;
+	timeone->tv_nsec += timetwo->tv_nsec;
+	if (timeone->tv_nsec > nsMax){
+		timeone->tv_sec++;
+		timeone->tv_nsec -= nsMax;
+	}
+}
+
+static void subTime(struct timespec *timeone, struct timespec *timetwo, struct timespec *timethree){
+  if (timetwo->tv_nsec < timeone->tv_nsec){
+    timethree->tv_sec = timetwo->tv_sec - timeone->tv_sec - 1;
+    timethree->tv_nsec = timeone->tv_nsec - timetwo->tv_nsec;
+  }
+  else{
+    timethree->tv_sec = timetwo->tv_sec - timeone->tv_sec;
+    timethree->tv_nsec = timetwo->tv_nsec - timeone->tv_nsec;
+  }
+}
+
+static void divTime(struct timespec *timeone, const int d){
+  timeone->tv_sec /= d;
+  timeone->tv_nsec /= d;
+}
+
+static int runUser(){
+	struct ossMsgger msg;
+	const int process = pop(&processQueue[queueReady], 0);
+	processQueue[queueReady].length--;
+
+	struct userProcess *user = &shm->user[process];
+	memset(&msg, '\0', sizeof(struct ossMsgger));
+
+	++logLines;
+	printf("OSS: Dispatching process with PID %u from queue 0 at time %lu:%lu,\n", user->id, shm->clock.tv_sec, shm->clock.tv_nsec);
+
+	msg.timeslice = 10000000;
+	msg.type = user->pid;
+	msg.pid = getpid();
+
+	if((msgsnd(queueID, (void *)&msg, (sizeof(struct ossMsgger) - sizeof(long)), 0) == -1) || (msgrcv(queueID, (void *)&msg, (sizeof(struct ossMsgger) - sizeof(long)), getpid(), 0) == -1)){
+		perror("./oss error: msgsnd and msgrcv failure");
+		return -1;
+	}
+
+	const int state = msg.timeslice;
+	switch(state){
+		case RDY:
+			user->state = RDY;
+
+			user->burstTime.tv_sec = 0;
+			user->burstTime.tv_nsec = msg.clock.tv_nsec;
+
+			addTime(&shm->clock, &user->burstTime);
+			addTime(&user->cpuTime, &user->burstTime);
+
+			++logLines;
+			printf("OSS: Receiving that process with PID %u ran for %lu nanoseconds,\n", user->id, user->burstTime.tv_nsec);
+
+			if(msg.clock.tv_nsec != 10000000){
+				++logLines;
+				printf("OSS: not using its entire time quantum\n");
+			}
+
+			push(queueReady, process);
+			break;
+
+		case BLOCK:
+			user->state = BLOCK;
+
+			user->burstTime.tv_sec = 0;
+			user->burstTime.tv_nsec = msg.clock.tv_nsec;
+
+			addTime(&user->cpuTime, &user->burstTime);
+
+			user->blockTime.tv_sec = msg.io.tv_sec;
+    	user->blockTime.tv_nsec = msg.io.tv_nsec;
+
+			addTime(&user->blockTime, &shm->clock);
+
+			usersBlock++;
+			++logLines;
+			printf("OSS: Putting process with PID %u into blocked queue\n", user->id);
+			push(queueBlock, process);
+			break;
+
+		case TERMINATE:
+			user->state = TERMINATE;
+    	user->burstTime.tv_sec = 0;
+   		user->burstTime.tv_nsec = msg.clock.tv_nsec;
+    	addTime(&user->cpuTime, &user->burstTime);
+
+			++logLines;
+			printf("OSS: Process with PID %u has been terminated\n", user->id);
+			++usersDel;
+
+			subTime(&user->startTime, &shm->clock, &user->totalTime);
+			addTime(&schedulerTime, &user->totalTime);
+
+			struct timespec reset;
+			subTime(&user->cpuTime, &user->totalTime, &reset);
+			addTime(&schedulerWaitTime, &reset);
+
+			memset(user, '\0', sizeof(struct userProcess));
+
+			user->state = NEW;
+			bitMapSwitch(process);
+			break;
+
+		default:
+			printf("OSS: It broke");
+			break;
+	}
+	return 1;
+}
+
+
+static int schedule(){
+	static struct timespec idleTime = {.tv_sec = 0, .tv_nsec = 0};
+	static int flag = 0;
+	struct timespec timeone, timetwo, timethree;
+
+	if(processQueue[queueReady].length == 0){
+		idleTime = shm->clock;
+		flag = 1;
+		return 0;
+	} else if(flag == 1){
+		flag = 0;
+		subTime(&idleTime, &shm->clock, &timetwo);
+		addTime(&CPUIdleTime, &timetwo);
+
+		idleTime.tv_sec = 0;
+		idleTime.tv_nsec = 0;
+	}
+
+	clock_gettime(CLOCK_REALTIME, &timeone);
+
+	runUser();
+
+	clock_gettime(CLOCK_REALTIME, &timeone);
+
+	subTime(&timeone, &timetwo, &timethree);
+	addTime(&shm->clock, &timethree);
+
+	++logLines;
+	printf("OSS: total time this dispatch was %lu nanoseconds", timethree.tv_nsec);
+	return 0;
 }
 
 static int startUserProcess(){
@@ -193,17 +348,6 @@ static int startUserProcess(){
 	}
 
 	return EXIT_SUCCESS;
-}
-
-static void addTime(struct timespec *first, const struct timespec *second){
-	static const unsigned int nsMax = 1000000000;
-
-	first->tv_sec += second->tv_sec;
-	first->tv_nsec += second->tv_nsec;
-	if (first->tv_nsec > nsMax){
-		first->tv_sec++;
-		first->tv_nsec -= nsMax;
-	}
 }
 
 static int startTimer(){
@@ -292,6 +436,7 @@ int main(const int argc, char *const argv[]){
 	while(usersDel < MAX_USERS){
 		startTimer();
 		unblock();
+		schedule();
 	}
 	
 }
