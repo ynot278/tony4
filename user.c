@@ -65,7 +65,7 @@ static int simulation(const int isIO){
 
 int main(const int argc, char *const argv[]){
 	if (argc != 2){
-		perror("user.c error: Args: ./user [IO_Bound = 0 or 1]\n");
+		perror("user.c error: Args: ./user [IO Bound = 0 or 1]\n");
 		return EXIT_FAILURE;
 	}
 

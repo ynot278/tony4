@@ -20,6 +20,7 @@
 static int seconds = MAX_REAL_SECONDS;
 
 const char *logFile = "ouput.txt";
+static unsigned int logLines = 0;
 
 struct userProcess{
 	pid_t pid;
@@ -46,17 +47,45 @@ static struct queue processQueue[queueCount];
 static unsigned int usersStart = 0;
 static unsigned int usersDel = 0;
 static unsigned int usersBlock = 0;
+static unsigned int id = 1;
 
 static struct timespec createNext = {.tv_sec = 0, .tv_nsec = 0};
 
 static const struct timespec maxTimeBetweenNewProcsSecs = {.tv_sec = 1};
 static const struct timespec maxTimeBetweenNewProcsNS = {.tv_nsec = 1};
 
+static unsigned char bitMap[MAX_PROCESS / 8];
+
 static void printHelp(){
 	printf("oss [-h] [-s t] [-l f]\n");
 	printf("-h Describe how the project should be run and then, terminate.\n");
 	printf("-s t Indicate how many maximum seconds before the system terminates.\n");
 	printf("-l f Specify a particular name for the log file.\n");
+}
+
+static int bitMapBytes(const int byte, const int num){
+	return (byte & (1 << num)) >> num;
+}
+
+static void bitMapSwitch(const int num){
+	int byte = num / 8;
+	int mask = 1 << (num % 8);
+
+	bitMap[byte] ^= mask;
+}
+
+static int freeBitMap(){
+	int i;
+	for(i = 0; i < MAX_PROCESS; ++i){
+		int byte = i / 8;
+		int bit = i % 8;
+
+		if(bitMapBytes(bitMap[byte], bit) == 0){
+			bitMapSwitch(i);
+			return i;
+		}
+	}
+	return -1;
 }
 
 static int createSHM(){
@@ -117,6 +146,61 @@ static void removeSHM(){
 	}
 }
 
+static int push(const int qid, const int bit){
+	struct queue *q = &processQueue[qid];
+	q->id[q->length++] = bit;
+	return qid;
+}
+
+static int startUserProcess(){
+	char buf[10];
+
+	const int freeBit = freeBitMap();
+	if(freeBit == -1){
+		return EXIT_SUCCESS;
+	}
+
+	struct userProcess *user = &shm->user[freeBit];
+
+	int IOBound = 0;
+
+	if ((rand() % 100 + 1) <= 25){
+		IOBound = 1;
+	} else{
+		IOBound = 0;
+	}
+
+	const pid_t pid = fork();
+
+	switch(pid){
+		case 0:
+			snprintf(buf, sizeof(buf), "%d", IOBound);
+			execl("./user", "./user", buf, NULL);
+			perror("./oss error: execl");
+			exit(EXIT_FAILURE);
+			break;
+		
+		case -1:
+			perror("./oss error: forking");
+			return EXIT_FAILURE;
+			break;
+
+		default:
+			++usersStart;
+			user->id = id++;
+			user->pid = pid;
+			user->startTime = shm->clock;
+
+			user->state = RDY;
+			push(queueReady, freeBit);
+			++logLines;
+			printf("OSS: Generating process with PID %u and putting it in queue at time %lu:%lu\n", user->id, shm->clock.tv_sec, shm->clock.tv_nsec);
+			break;
+	}
+
+	return EXIT_SUCCESS;
+}
+
 static void addTime(struct timespec *first, const struct timespec *second){
 	static const unsigned int nsMax = 1000000000;
 
@@ -139,9 +223,8 @@ static int startTimer(){
 		addTime(&createNext, &shm->clock);
 
 		if(usersStart < MAX_USERS){
-			
+			startUserProcess();
 		}
-
 	}
 	return 0;
 }
@@ -191,10 +274,11 @@ int main(const int argc, char *const argv[]){
 	}
 
 	memset(shm, '\0', sizeof(struct shmem));
+	memset(bitMap, '\0', sizeof(bitMap));
 	memset(processQueue, '\0', sizeof(struct queue) *queueCount);
 
 	while(usersDel < MAX_USERS){
-
+		startTimer();
 	}
 	
 }
