@@ -77,6 +77,7 @@ static int freeBitMap(){
 	return -1;
 }
 
+//shared memory and msg q
 static int createSHM(){
 	const key_t key = ftok("main.c", shmKey);
 
@@ -135,12 +136,14 @@ static void removeSHM(){
 	}
 }
 
+//push into q
 static int push(const int queueID, const int bit){
 	struct queue *q = &processQueue[queueID];
 	q->id[q->length++] = bit;
 	return queueID;
 }
 
+//pop out q
 static int pop(struct queue *processQueue, const int index){
 	unsigned int i;
 	unsigned int user = processQueue->id[index];
@@ -171,11 +174,6 @@ static void subTime(struct timespec *timeone, struct timespec *timetwo, struct t
     timethree->tv_sec = timetwo->tv_sec - timeone->tv_sec;
     timethree->tv_nsec = timetwo->tv_nsec - timeone->tv_nsec;
   }
-}
-
-static void divTime(struct timespec *timeone, const int d){
-  timeone->tv_sec /= d;
-  timeone->tv_nsec /= d;
 }
 
 static int runUser(){
